@@ -141,3 +141,201 @@ fn process_chargeback(mut state: State, transaction: Transaction) -> State {
 
     state
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_deposit() {
+        let start_state = State::new();
+        let tx = Transaction {
+            transaction_type: TransactionType::Deposit,
+            client_id: 1,
+            id: 1,
+            amount: 1.0,
+            disputed: false,
+        };
+
+        let result_state = process_transaction(start_state, tx);
+
+        assert_eq!(result_state.clients.len(), 1);
+        assert!(result_state.clients.contains_key(&1));
+
+        let result_client = result_state.clients.get(&1).unwrap();
+
+        assert_eq!(result_client.available, 1.0);
+        assert_eq!(result_client.total, 1.0);
+        assert_eq!(result_client.held, 0.0);
+    }
+
+    #[test]
+    fn valid_withdrawal() {
+        let mut state = State::new();
+        let txs = vec![
+            Transaction {
+                transaction_type: TransactionType::Deposit,
+                client_id: 1,
+                id: 1,
+                amount: 1.0,
+                disputed: false,
+            },
+            Transaction {
+                transaction_type: TransactionType::Withdrawal,
+                client_id: 1,
+                id: 2,
+                amount: 0.35,
+                disputed: false,
+            },
+        ];
+
+        for tx in txs {
+            state = process_transaction(state, tx);
+        }
+
+        assert_eq!(state.clients.len(), 1);
+
+        let result_client = state.clients.get(&1).unwrap();
+
+        assert_eq!(result_client.available, 0.65);
+        assert_eq!(result_client.total, 0.65);
+    }
+
+    #[test]
+    fn invalid_withdrawal_insufficient_funds() {
+        let mut state = State::new();
+        let txs = vec![
+            Transaction {
+                transaction_type: TransactionType::Deposit,
+                client_id: 1,
+                id: 1,
+                amount: 1.0,
+                disputed: false,
+            },
+            Transaction {
+                transaction_type: TransactionType::Withdrawal,
+                client_id: 1,
+                id: 2,
+                amount: 10.0,
+                disputed: false,
+            },
+        ];
+
+        for tx in txs {
+            state = process_transaction(state, tx);
+        }
+
+        assert_eq!(state.clients.len(), 1);
+
+        let result_client = state.clients.get(&1).unwrap();
+
+        assert_eq!(result_client.available, 1.0);
+        assert_eq!(result_client.total, 1.0);
+    }
+
+    #[test]
+    fn dispute_and_resolve() {
+        let mut state = State::new();
+        let txs_1 = vec![
+            Transaction {
+                transaction_type: TransactionType::Deposit,
+                client_id: 1,
+                id: 1,
+                amount: 1.0,
+                disputed: false,
+            },
+            Transaction {
+                transaction_type: TransactionType::Dispute,
+                client_id: 1,
+                id: 1,
+                amount: 0.0,
+                disputed: false,
+            },
+        ];
+
+        for tx in txs_1 {
+            state = process_transaction(state, tx);
+        }
+
+        assert_eq!(state.clients.len(), 1);
+
+        let mut result_client = state.clients.get(&1).unwrap();
+
+        assert_eq!(result_client.available, 0.0);
+        assert_eq!(result_client.total, 1.0);
+        assert_eq!(result_client.held, 1.0);
+
+        let resolve_tx = Transaction {
+            transaction_type: TransactionType::Resolve,
+            client_id: 1,
+            id: 1,
+            amount: 0.0,
+            disputed: false,
+        };
+
+        state = process_transaction(state, resolve_tx);
+
+        result_client = state.clients.get(&1).unwrap();
+
+        assert_eq!(result_client.available, 1.0);
+        assert_eq!(result_client.total, 1.0);
+        assert_eq!(result_client.held, 0.0);
+    }
+
+    #[test]
+    fn chargeback() {
+        let mut state = State::new();
+        let txs = vec![
+            Transaction {
+                transaction_type: TransactionType::Deposit,
+                client_id: 1,
+                id: 1,
+                amount: 1.0,
+                disputed: false,
+            },
+            Transaction {
+                transaction_type: TransactionType::Dispute,
+                client_id: 1,
+                id: 1,
+                amount: 0.0,
+                disputed: false,
+            },
+            Transaction {
+                transaction_type: TransactionType::Chargeback,
+                client_id: 1,
+                id: 1,
+                amount: 0.0,
+                disputed: false,
+            },
+        ];
+
+        for tx in txs {
+            state = process_transaction(state, tx);
+        }
+
+        assert_eq!(state.clients.len(), 1);
+
+        let result_client = state.clients.get(&1).unwrap();
+
+        assert_eq!(result_client.available, 0.0);
+        assert_eq!(result_client.total, 0.0);
+        assert_eq!(result_client.held, 0.0);
+        assert!(result_client.locked);
+    }
+
+    #[test]
+    fn invalid_withdrawal_no_client() {
+        let start_state = State::new();
+        let tx = Transaction {
+            transaction_type: TransactionType::Withdrawal,
+            client_id: 1,
+            id: 1,
+            amount: 1.0,
+            disputed: false,
+        };
+
+        let result_state = process_transaction(start_state, tx);
+
+        assert!(result_state.clients.is_empty());
+    }
+}
