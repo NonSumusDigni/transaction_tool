@@ -1,6 +1,6 @@
-use std::{collections::HashMap, env, error::Error, process};
+use std::{collections::HashMap, env, error::Error, io, process};
 
-use csv::{ReaderBuilder, Trim};
+use csv::{ReaderBuilder, Trim, Writer};
 use types::{Client, State};
 
 mod processor;
@@ -9,17 +9,21 @@ mod types;
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() <= 1 {
-        println!("Missing filename argument");
+        eprintln!("Missing filename argument");
         process::exit(1);
     }
 
-    match process_transaction_file(&args[1]) {
-        Ok(state) => print_client_state(&state.clients),
-        Err(err) => {
-            println!("Failed to process '{}': {}", &args[1], err);
-            process::exit(1);
-        }
+    if let Err(err) = try_main(&args[1]) {
+        eprintln!("Failed to process '{}': {}", &args[1], err);
+        process::exit(1);
     }
+}
+
+fn try_main(path: &String) -> Result<(), Box<dyn Error>> {
+    let state = process_transaction_file(path)?;
+    print_client_state(&state.clients)?;
+
+    Ok(())
 }
 
 fn process_transaction_file(path: &String) -> Result<State, Box<dyn Error>> {
@@ -30,6 +34,14 @@ fn process_transaction_file(path: &String) -> Result<State, Box<dyn Error>> {
     })
 }
 
-fn print_client_state(client_state: &HashMap<u16, Client>) {
-    println!("{:?}", client_state)
+fn print_client_state(client_state: &HashMap<u16, Client>) -> Result<(), Box<dyn Error>> {
+    let mut writer = Writer::from_writer(io::stdout());
+
+    for client in client_state.values() {
+        writer.serialize(client)?;
+    }
+
+    writer.flush()?;
+
+    Ok(())
 }

@@ -32,11 +32,13 @@ pub struct Transaction {
 
 #[derive(Serialize, Debug)]
 pub struct Client {
+    #[serde(rename = "client")]
     pub id: u16,
-    pub locked: bool,
+
     pub available: f64,
     pub held: f64,
     pub total: f64,
+    pub locked: bool,
 }
 
 impl Client {
